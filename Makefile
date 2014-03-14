@@ -1,4 +1,4 @@
-# Copyright (C) 2013 Mark Hills <mark@xwax.org>
+# Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 2, as
@@ -27,6 +27,7 @@ SDL_CFLAGS ?= `sdl-config --cflags`
 SDL_LIBS ?= `sdl-config --libs` -lSDL_ttf
 ALSA_LIBS ?= -lasound
 JACK_LIBS ?= -ljack
+LIBLO_LIBS ?= -llo
 
 # Installation paths
 
@@ -39,42 +40,23 @@ DOCDIR ?= $(PREFIX)/share/doc
 
 # Build flags
 
-CFLAGS ?= -O3
+CFLAGS ?=-O3
+LDFLAGS ?= -O3
+
 CFLAGS += -Wall
 CPPFLAGS += -MMD
-LDFLAGS ?= -O3
 
 # Core objects and libraries
 
-OBJS = controller.o \
-	cues.o \
-	deck.o \
-	device.o \
-	external.o \
-	interface.o \
-	library.o \
-	listbox.o \
-	listing.o \
-	lut.o \
-	player.o \
-	realtime.o \
-	rig.o \
-	selector.o \
-	status.o \
-	thread.o \
-	timecoder.o \
-	track.o \
-	xwax.o
+OBJS = osc.o controller.o cues.o deck.o device.o external.o interface.o \
+	library.o listing.o lut.o \
+	player.o realtime.o \
+	rig.o selector.o server.o status.o thread.o timecoder.o track.o xwax.o
 DEVICE_CPPFLAGS =
 DEVICE_LIBS =
 
-TESTS = tests/cues \
-	tests/external \
-	tests/library \
-	tests/status \
-	tests/timecoder \
-	tests/track \
-	tests/ttf
+TESTS = test-cues test-external test-library test-status \
+	test-timecoder test-track
 
 # Optional device types
 
@@ -114,15 +96,19 @@ VERSION = $(shell ./mkversion)
 # Main binary
 
 xwax:		$(OBJS)
-xwax:		LDLIBS += $(SDL_LIBS) $(DEVICE_LIBS) -lm
+xwax:		LDLIBS += $(SDL_LIBS) $(DEVICE_LIBS) $(LIBLO_LIBS) -lm
 xwax:		LDFLAGS += -pthread
 
 interface.o:	CFLAGS += $(SDL_CFLAGS)
 
 xwax.o:		CFLAGS += $(SDL_CFLAGS)
 xwax.o:		CPPFLAGS += $(DEVICE_CPPFLAGS)
-xwax.o:		CPPFLAGS += -DEXECDIR=\"$(EXECDIR)\" -DVERSION=\"$(VERSION)\"
+xwax.o:		CPPFLAGS += -DEXECDIR=\"$(EXECDIR)\" -DVERSION=\"$(VERSION)\" -DANDROID
 xwax.o:		.version
+
+# Client
+
+xwax-client:	xwax-client.o
 
 # Install to system
 
@@ -151,33 +137,28 @@ TAGS:		$(OBJS:.o=.c)
 
 .PHONY:		tests
 tests:		$(TESTS)
-tests:		CPPFLAGS += -I.
 
-tests/cues:	tests/cues.o cues.o
+test-cues:	test-cues.o cues.o
 
-tests/external:	tests/external.o external.o
+test-external:	test-external.o external.o
 
-tests/library:	tests/library.o external.o library.o listing.o
+test-library:	test-library.o external.o library.o listing.o
 
-tests/midi:	tests/midi.o midi.o
-tests/midi:	LDLIBS += $(ALSA_LIBS)
+test-midi:	test-midi.o midi.o
+test-midi:	LDLIBS += $(ALSA_LIBS)
 
-tests/status:	tests/status.o status.o
+test-status:	test-status.o status.o
 
-tests/timecoder:	tests/timecoder.o lut.o timecoder.o
+test-timecoder:	test-timecoder.o lut.o timecoder.o
 
-tests/track:	tests/track.o external.o rig.o status.o thread.o track.o
-tests/track:	LDFLAGS += -pthread
-tests/track:	LDLIBS += -lm
-
-tests/ttf.o:	tests/ttf.c  # not needed except to workaround Make 3.81
-tests/ttf.o:	CFLAGS += $(SDL_CFLAGS)
-
-tests/ttf:	LDLIBS += $(SDL_LIBS)
+test-track:	test-track.o external.o rig.o status.o thread.o track.o
+test-track:	LDFLAGS += -pthread
+test-track:	LDLIBS += -lm
 
 .PHONY:		clean
 clean:
 		rm -f xwax \
+			xwax-client xwax-client.o \
 			$(OBJS) $(DEPS) \
 			$(TESTS) $(TEST_OBJS) \
 			TAGS

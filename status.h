@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,8 +28,7 @@
 
 #define STATUS_VERBOSE 0
 #define STATUS_INFO    1
-#define STATUS_WARN    2
-#define STATUS_ALERT   3
+#define STATUS_ERROR   2
 
 const char* status(void);
 int status_level(void);

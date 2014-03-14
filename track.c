@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -17,10 +17,12 @@
  *
  */
 
+#define _BSD_SOURCE /* vfork() */
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/mman.h> /* mlock() */
@@ -31,6 +33,7 @@
 #include "realtime.h"
 #include "rig.h"
 #include "status.h"
+#include "osc.h"
 #include "track.h"
 
 #define RATE 44100
@@ -280,7 +283,7 @@ static struct track* track_get_again(const char *importer, const char *path)
 
     list_for_each(t, &tracks, tracks) {
         if (t->importer == importer && t->path == path) {
-            track_acquire(t);
+            track_get(t);
             return t;
         }
     }
@@ -294,7 +297,7 @@ static struct track* track_get_again(const char *importer, const char *path)
  * Return: pointer, or NULL if not enough resources
  */
 
-struct track* track_acquire_by_import(const char *importer, const char *path)
+struct track* track_get_by_import(const char *importer, const char *path)
 {
     struct track *t;
 
@@ -313,7 +316,7 @@ struct track* track_acquire_by_import(const char *importer, const char *path)
         return NULL;
     }
 
-    track_acquire(t);
+    track_get(t);
 
     return t;
 }
@@ -324,13 +327,13 @@ struct track* track_acquire_by_import(const char *importer, const char *path)
  * Return: pointer, not NULL
  */
 
-struct track* track_acquire_empty(void)
+struct track* track_get_empty(void)
 {
     empty.refcount++;
     return &empty;
 }
 
-void track_acquire(struct track *t)
+void track_get(struct track *t)
 {
     t->refcount++;
 }
@@ -353,7 +356,7 @@ static void terminate(struct track *t)
  * Finish use of a track object
  */
 
-void track_release(struct track *t)
+void track_put(struct track *t)
 {
     t->refcount--;
 
@@ -447,10 +450,12 @@ static void stop_import(struct track *t)
 
     if (WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS) {
         fprintf(stderr, "Track import completed\n");
+        osc_send_ppm_block(t);
+        fprintf(stderr, "Sent ppm to OSC\n");
     } else {
         fprintf(stderr, "Track import completed with status %d\n", status);
         if (!t->terminated)
-            status_printf(STATUS_ALERT, "Error importing %s", t->path);
+            status_printf(STATUS_ERROR, "Error importing %s", t->path);
     }
 
     t->pid = 0;
@@ -480,5 +485,5 @@ void track_handle(struct track *tr)
 
     stop_import(tr);
     list_del(&tr->rig);
-    track_release(tr); /* may delete the track */
+    track_put(tr); /* may delete the track */
 }

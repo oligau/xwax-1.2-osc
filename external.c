@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -201,108 +201,104 @@ fail:
     return -1;
 }
 
-void rb_reset(struct rb *rb)
+static bool is_delim(char c)
 {
-    rb->len = 0;
+    return (c == '\t' || c == '\n');
 }
 
-bool rb_is_full(const struct rb *rb)
+static ssize_t find_delim(char *buf, size_t len)
 {
-    return (rb->len == sizeof rb->buf);
-}
+    size_t n;
 
-/*
- * Read, within reasonable limits (ie. memory or time)
- * from the fd into the buffer
- *
- * Return: -1 on error, 0 on EOF, otherwise the number of bytes added
- */
-
-static ssize_t top_up(struct rb *rb, int fd)
-{
-    size_t remain;
-    ssize_t z;
-
-    assert(rb->len < sizeof rb->buf);
-    remain = sizeof(rb->buf) - rb->len;
-
-    z = read(fd, rb->buf + rb->len, remain);
-    if (z == -1) {
-        perror("read");
-        return -1;
+    for (n = 0; n < len; n++) {
+        if (is_delim(buf[n]))
+            return n;
     }
-
-    rb->len += z;
-    return z;
-}
-
-/*
- * Pop the front of the buffer to end-of-line
- *
- * Return: 0 if not found, -1 if not enough memory,
- *    otherwise string length (incl. terminator)
- * Post: if return is > 0, q points to alloc'd string
- */
-
-static ssize_t pop(struct rb *rb, char **q)
-{
-    const char *x;
-    char *s;
-    size_t len;
-
-    x = memchr(rb->buf, '\n', rb->len);
-    if (!x) {
-        debug("pop %p exhausted", rb);
-        return 0;
-    }
-
-    len = x - rb->buf;
-    debug("pop %p got %u", rb, len);
-
-    s = strndup(rb->buf, len);
-    if (!s) {
-        perror("strndup");
-        return -1;
-    }
-
-    *q = s;
-
-    /* Simple compact of the buffer. If this is a bottleneck of any
-     * kind (unlikely) then a circular buffer should be used */
-
-    memmove(rb->buf, x + 1, rb->len - len - 1);
-    rb->len = rb->len - len - 1;
-
-    return len + 1;
-}
-
-/*
- * Read a terminated string from the given file descriptor via
- * the buffer.
- *
- * Handles non-blocking file descriptors too. If fd is non-blocking,
- * then the semantics are the same as a non-blocking read() --
- * ie. EAGAIN may be returned as an error.
- *
- * Return: 0 on EOF
- */
-
-ssize_t get_line(int fd, struct rb *rb, char **string)
-{
-    ssize_t z;
-
-    z = top_up(rb, fd);
-    if (z <= 0)
-        return z;
-
-    z = pop(rb, string);
-    if (z != 0)
-        return z;
-
-    if (rb_is_full(rb))
-        errno = ENOBUFS;
-    else
-        errno = EAGAIN;
 
     return -1;
+}
+
+/*
+ * Consume a string (up to a delimiter) from the given buffer
+ *
+ * Return: malloc'd string, or NULL on error or if no delimiter found
+ * Post: on error, errno is set
+ */
+
+static char* pop_buffer(char *buf, size_t *fill, size_t len)
+{
+    char *r;
+    ssize_t z;
+
+    z = find_delim(buf, *fill);
+    if (z == -1)
+        return NULL; /* errno is not set */
+
+    r = strndup(buf, z);
+    if (r == NULL)
+        return NULL; /* errno is set */
+
+    /* Consume */
+
+    memmove(buf, buf + z + 1, *fill - z - 1);
+    *fill -= z + 1;
+
+    return r;
+}
+
+/*
+ * Read the next string up to a valid delimeter
+ *
+ * Makes it sane to do buffered read I/O on non-blocking file
+ * descriptors. It also works on blocking ones too. The caller
+ * provides the buffer.
+ *
+ * Return: allocated string, otherwise NULL on EOF or error
+ * Post: on error, errno is set
+ * Post: buf and fill are updated
+ */
+
+char* read_field(int fd, char *buf, size_t *fill, size_t len)
+{
+    for (;;) {
+        char *r;
+        size_t n;
+        ssize_t z;
+
+        r = pop_buffer(buf, fill, len);
+        if (r != NULL)
+            return r;
+
+        /* If there's no complete field in the buffer, top it up */
+
+        n = len - *fill;
+        if (n == 0) {
+            errno = ENOBUFS;
+            return NULL;
+        }
+
+        z = read(fd, buf + *fill, n);
+        debug("read returned %zd", z);
+
+        if (z == -1)
+            return NULL; /* errno is set, could be EAGAIN */
+
+        /* If read returned EOF, empty the buffer and complete */
+
+        if (z == 0) { /* EOF */
+            if (*fill == 0)
+                break;
+
+            r = strndup(buf, *fill);
+            if (r == NULL)
+                return NULL;
+
+            *fill = 0;
+            return r;
+        }
+
+        *fill += z;
+    }
+
+    return NULL; /* clean EOF, errno is not set */
 }

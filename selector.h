@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>,
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>,
  *                    Yves Adler <yves.adler@googlemail.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -25,8 +25,14 @@
 #include <stddef.h>
 
 #include "library.h"
-#include "listbox.h"
 #include "listing.h"
+
+/* Managed context of a scrolling window, of a number of fixed-height
+ * lines, backed by a list of a known number of entries */
+
+struct scroll {
+    int lines, offset, entries, selected;
+};
 
 struct selector {
     struct library *library;
@@ -35,7 +41,7 @@ struct selector {
         *swap_listing, /* used to swap between a and b listings */
         listing_a, listing_b;
 
-    struct listbox records, crates;
+    struct scroll records, crates;
     bool toggled;
     int toggle_back, sort;
     struct record *target;

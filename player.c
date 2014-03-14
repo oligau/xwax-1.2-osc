@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -217,7 +217,7 @@ void player_init(struct player *pl, unsigned int sample_rate,
 void player_clear(struct player *pl)
 {
     spin_clear(&pl->lock);
-    track_release(pl->track);
+    track_put(pl->track);
 }
 
 /*
@@ -243,6 +243,12 @@ bool player_toggle_timecode_control(struct player *pl)
     if (pl->timecode_control)
         pl->recalibrate = true;
     return pl->timecode_control;
+}
+
+void player_set_pitch(struct player *pl, const float pitch)
+{
+    pl->timecode_control = false;
+    pl->pitch = pitch;
 }
 
 double player_get_position(struct player *pl)
@@ -294,7 +300,7 @@ void player_set_track(struct player *pl, struct track *track)
     pl->track = track;
     spin_unlock(&pl->lock);
 
-    track_release(x); /* discard the old track */
+    track_put(x); /* discard the old track */
 }
 
 /*
@@ -311,14 +317,14 @@ void player_clone(struct player *pl, const struct player *from)
     pl->offset = pl->position - elapsed;
 
     t = from->track;
-    track_acquire(t);
+    track_get(t);
 
     spin_lock(&pl->lock);
     x = pl->track;
     pl->track = t;
     spin_unlock(&pl->lock);
 
-    track_release(x);
+    track_put(x);
 }
 
 /*

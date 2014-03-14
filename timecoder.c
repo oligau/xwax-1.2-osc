@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -18,7 +18,6 @@
  */
 
 #include <assert.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +26,7 @@
 #include "debug.h"
 #include "timecoder.h"
 
-#define ZERO_THRESHOLD (128 << 16)
+#define ZERO_THRESHOLD 128
 
 #define ZERO_RC 0.001 /* time constant for zero/rumble filter */
 
@@ -195,7 +194,7 @@ static inline bits_t rev(bits_t current, struct timecode_def *def)
 static int build_lookup(struct timecode_def *def)
 {
     unsigned int n;
-    bits_t current;
+    bits_t current, last;
 
     if (def->lookup)
         return 0;
@@ -209,17 +208,12 @@ static int build_lookup(struct timecode_def *def)
     current = def->seed;
 
     for (n = 0; n < def->length; n++) {
-        bits_t next;
-
         /* timecode must not wrap */
         dassert(lut_lookup(&def->lut, current) == (unsigned)-1);
         lut_push(&def->lut, current);
-
-        /* check symmetry of the lfsr functions */
-        next = fwd(current, def);
-        dassert(rev(next, def) == current);
-
-        current = next;
+        last = current;
+        current = fwd(current, def);
+        dassert(rev(current, def) == last);
     }
 
     def->lookup = true;
@@ -290,7 +284,7 @@ static void init_channel(struct timecoder_channel *ch)
  */
 
 void timecoder_init(struct timecoder *tc, struct timecode_def *def,
-                    double speed, unsigned int sample_rate, bool phono)
+                    double speed, unsigned int sample_rate)
 {
     assert(def != NULL);
 
@@ -303,16 +297,13 @@ void timecoder_init(struct timecoder *tc, struct timecode_def *def,
 
     tc->dt = 1.0 / sample_rate;
     tc->zero_alpha = tc->dt / (ZERO_RC + tc->dt);
-    tc->threshold = ZERO_THRESHOLD;
-    if (phono)
-        tc->threshold >>= 5; /* approx -36dB */
 
     tc->forwards = 1;
     init_channel(&tc->primary);
     init_channel(&tc->secondary);
     pitch_init(&tc->pitch, tc->dt);
 
-    tc->ref_level = INT_MAX;
+    tc->ref_level = 32768.0;
     tc->bitstream = 0;
     tc->timecode = 0;
     tc->valid_counter = 0;
@@ -369,17 +360,16 @@ void timecoder_monitor_clear(struct timecoder *tc)
  */
 
 static void detect_zero_crossing(struct timecoder_channel *ch,
-                                 signed int v, double alpha,
-                                 signed int threshold)
+                                 signed int v, double alpha)
 {
     ch->crossing_ticker++;
 
     ch->swapped = false;
-    if (v > ch->zero + threshold && !ch->positive) {
+    if (v > ch->zero + ZERO_THRESHOLD && !ch->positive) {
         ch->swapped = true;
         ch->positive = true;
         ch->crossing_ticker = 0;
-    } else if (v < ch->zero - threshold && ch->positive) {
+    } else if (v < ch->zero - ZERO_THRESHOLD && ch->positive) {
         ch->swapped = true;
         ch->positive = false;
         ch->crossing_ticker = 0;
@@ -394,35 +384,31 @@ static void detect_zero_crossing(struct timecoder_channel *ch,
 
 static void update_monitor(struct timecoder *tc, signed int x, signed int y)
 {
-    int px, py, size, ref;
+    int px, py, p;
+    double v, w;
 
     if (!tc->mon)
         return;
 
-    size = tc->mon_size;
-    ref = tc->ref_level;
-
     /* Decay the pixels already in the montior */
 
     if (++tc->mon_counter % MONITOR_DECAY_EVERY == 0) {
-        int p;
-
-        for (p = 0; p < SQ(size); p++) {
+        for (p = 0; p < SQ(tc->mon_size); p++) {
             if (tc->mon[p])
                 tc->mon[p] = tc->mon[p] * 7 / 8;
         }
     }
 
-    assert(ref > 0);
+    v = (double)x / tc->ref_level / 2;
+    w = (double)y / tc->ref_level / 2;
 
-    /* ref_level is half the prevision of signal level */
-    px = size / 2 + (long long)x * size / ref / 8;
-    py = size / 2 + (long long)y * size / ref / 8;
+    px = tc->mon_size / 2 + (v * tc->mon_size / 2);
+    py = tc->mon_size / 2 + (w * tc->mon_size / 2);
 
-    if (px < 0 || px >= size || py < 0 || py >= size)
-        return;
+    /* Set the pixel value to white */
 
-    tc->mon[py * size + px] = 0xff; /* white */
+    if (px > 0 && px < tc->mon_size && py > 0 && py < tc->mon_size)
+        tc->mon[py * tc->mon_size + px] = 0xff;
 }
 
 /*
@@ -467,8 +453,7 @@ static void process_bitstream(struct timecoder *tc, signed int m)
 
     /* Adjust the reference level based on this new peak */
 
-    tc->ref_level -= tc->ref_level / REF_PEAKS_AVG;
-    tc->ref_level += m / REF_PEAKS_AVG;
+    tc->ref_level = (tc->ref_level * (REF_PEAKS_AVG - 1) + m) / REF_PEAKS_AVG;
 
     debug("%+6d zero, %+6d (ref %+6d)\t= %d%c (%5d)",
           tc->primary.zero,
@@ -479,16 +464,17 @@ static void process_bitstream(struct timecoder *tc, signed int m)
 
 /*
  * Process a single sample from the incoming audio
- *
- * The two input signals (primary and secondary) are in the full range
- * of a signed int; ie. 32-bit signed.
  */
 
 static void process_sample(struct timecoder *tc,
 			   signed int primary, signed int secondary)
 {
-    detect_zero_crossing(&tc->primary, primary, tc->zero_alpha, tc->threshold);
-    detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha, tc->threshold);
+    signed int m; /* pcm sample, sum of two shorts */
+
+    detect_zero_crossing(&tc->primary, primary, tc->zero_alpha);
+    detect_zero_crossing(&tc->secondary, secondary, tc->zero_alpha);
+
+    m = abs(primary - tc->primary.zero);
 
     /* If an axis has been crossed, use the direction of the crossing
      * to work out the direction of the vinyl */
@@ -531,10 +517,6 @@ static void process_sample(struct timecoder *tc,
     if (tc->secondary.swapped &&
        tc->primary.positive == ((tc->def->flags & SWITCH_POLARITY) == 0))
     {
-        signed int m;
-
-        /* scale to avoid clipping */
-        m = abs(primary / 2 - tc->primary.zero / 2);
 	process_bitstream(tc, m);
     }
 
@@ -575,29 +557,24 @@ void timecoder_cycle_definition(struct timecoder *tc)
 
 /*
  * Submit and decode a block of PCM audio data to the timecode decoder
- *
- * PCM data is in the full range of signed short; ie. 16-bit signed.
  */
 
 void timecoder_submit(struct timecoder *tc, signed short *pcm, size_t npcm)
 {
     while (npcm--) {
-	signed int left, right, primary, secondary;
-
-        left = pcm[0] << 16;
-        right = pcm[1] << 16;
+	signed int primary, secondary;
 
         if (tc->def->flags & SWITCH_PRIMARY) {
-            primary = left;
-            secondary = right;
+            primary = pcm[0];
+            secondary = pcm[1];
         } else {
-            primary = right;
-            secondary = left;
+            primary = pcm[1];
+            secondary = pcm[0];
         }
 
 	process_sample(tc, primary, secondary);
-        update_monitor(tc, left, right);
 
+        update_monitor(tc, pcm[0], pcm[1]);
         pcm += TIMECODER_CHANNELS;
     }
 }
@@ -618,15 +595,15 @@ signed int timecoder_get_position(struct timecoder *tc, double *when)
 {
     signed int r;
 
-    if (tc->valid_counter <= VALID_BITS)
-        return -1;
+    if (tc->valid_counter > VALID_BITS) {
+        r = lut_lookup(&tc->def->lut, tc->bitstream);
 
-    r = lut_lookup(&tc->def->lut, tc->bitstream);
-    if (r == -1)
-        return -1;
+        if (r >= 0) {
+            if (when)
+                *when = tc->timecode_ticker * tc->dt;
+            return r;
+        }
+    }
 
-    if (when)
-        *when = tc->timecode_ticker * tc->dt;
-
-    return r;
+    return -1;
 }

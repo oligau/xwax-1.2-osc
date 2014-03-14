@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -51,7 +51,7 @@ struct deck {
     struct controller *control[4];
 };
 
-int deck_init(struct deck *deck, struct rt *rt);
+int deck_init(struct deck *deck, struct rt *rt, size_t ncontrol);
 void deck_clear(struct deck *deck);
 
 bool deck_is_locked(const struct deck *deck);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -61,6 +61,7 @@ bool player_toggle_timecode_control(struct player *pl);
 void player_set_track(struct player *pl, struct track *track);
 void player_clone(struct player *pl, const struct player *from);
 
+void player_set_pitch(struct player *pl, const float pitch);
 double player_get_position(struct player *pl);
 double player_get_elapsed(struct player *pl);
 double player_get_remain(struct player *pl);

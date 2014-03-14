@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -52,24 +52,6 @@ void controller_add_deck(struct controller *c, struct deck *d)
         assert(d->ncontrol < ARRAY_SIZE(d->control)); /* FIXME: report error */
         d->control[d->ncontrol++] = c; /* for callbacks */
     }
-}
-
-/*
- * Get file descriptors which should be polled for this controller
- *
- * Important on systems where only callback-based audio devices
- * (eg. JACK) are used. We need to return some descriptors so
- * that the realtime thread runs.
- *
- * Return: the number of pollfd filled, or -1 on error
- */
-
-ssize_t controller_pollfds(struct controller *c, struct pollfd *pe, size_t z)
-{
-    if (c->ops->pollfds != NULL)
-        return c->ops->pollfds(c, pe, z);
-    else
-        return 0;
 }
 
 void controller_handle(struct controller *c)

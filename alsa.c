@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -17,7 +17,6 @@
  *
  */
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/poll.h>
@@ -53,17 +52,6 @@ static void alsa_error(const char *msg, int r)
 }
 
 
-static bool chk(const char *s, int r)
-{
-    if (r < 0) {
-        alsa_error(s, r);
-        return false;
-    } else {
-        return true;
-    }
-}
-
-
 static int pcm_open(struct alsa_pcm *alsa, const char *device_name,
                     snd_pcm_stream_t stream, int rate, int buffer_time)
 {
@@ -73,29 +61,37 @@ static int pcm_open(struct alsa_pcm *alsa, const char *device_name,
     snd_pcm_hw_params_t *hw_params;
     
     r = snd_pcm_open(&alsa->pcm, device_name, stream, SND_PCM_NONBLOCK);
-    if (!chk("open", r))
+    if (r < 0) {
+        alsa_error("open", r);
         return -1;
+    }
 
     snd_pcm_hw_params_alloca(&hw_params);
 
     r = snd_pcm_hw_params_any(alsa->pcm, hw_params);
-    if (!chk("hw_params_any", r))
+    if (r < 0) {
+        alsa_error("hw_params_any", r);
         return -1;
+    }
     
     r = snd_pcm_hw_params_set_access(alsa->pcm, hw_params,
                                      SND_PCM_ACCESS_RW_INTERLEAVED);
-    if (!chk("hw_params_set_access", r))
+    if (r < 0) {
+        alsa_error("hw_params_set_access", r);
         return -1;
+    }
     
     r = snd_pcm_hw_params_set_format(alsa->pcm, hw_params, SND_PCM_FORMAT_S16);
-    if (!chk("hw_params_set_format", r)) {
+    if (r < 0) {
+        alsa_error("hw_params_set_format", r);
         fprintf(stderr, "16-bit signed format is not available. "
                 "You may need to use a 'plughw' device.\n");
         return -1;
     }
 
     r = snd_pcm_hw_params_set_rate(alsa->pcm, hw_params, rate, 0);
-    if (!chk("hw_params_set_rate", r )) {
+    if (r < 0) {
+        alsa_error("hw_params_set_rate", r);
         fprintf(stderr, "%dHz sample rate not available. You may need to use "
                 "a 'plughw' device.\n", rate);
         return -1;
@@ -103,7 +99,8 @@ static int pcm_open(struct alsa_pcm *alsa, const char *device_name,
     alsa->rate = rate;
 
     r = snd_pcm_hw_params_set_channels(alsa->pcm, hw_params, DEVICE_CHANNELS);
-    if (!chk("hw_params_set_channels", r)) {
+    if (r < 0) {
+        alsa_error("hw_params_set_channels", r);
         fprintf(stderr, "%d channel audio not available on this device.\n",
                 DEVICE_CHANNELS);
         return -1;
@@ -112,7 +109,8 @@ static int pcm_open(struct alsa_pcm *alsa, const char *device_name,
     p = buffer_time * 1000; /* microseconds */
     dir = -1;
     r = snd_pcm_hw_params_set_buffer_time_max(alsa->pcm, hw_params, &p, &dir);
-    if (!chk("hw_params_set_buffer_time_max", r)) {
+    if (r < 0) {
+        alsa_error("hw_params_set_buffer_time_max", r);
         fprintf(stderr, "Buffer of %dms may be too small for this hardware.\n",
                 buffer_time);
         return -1;
@@ -121,19 +119,24 @@ static int pcm_open(struct alsa_pcm *alsa, const char *device_name,
     p = 2; /* double buffering */
     dir = 1;
     r = snd_pcm_hw_params_set_periods_min(alsa->pcm, hw_params, &p, &dir);
-    if (!chk("hw_params_set_periods_min", r)) {
+    if (r < 0) {
+        alsa_error("hw_params_set_periods_min", r);
         fprintf(stderr, "Buffer of %dms may be too small for this hardware.\n",
                 buffer_time);
         return -1;
     }
 
     r = snd_pcm_hw_params(alsa->pcm, hw_params);
-    if (!chk("hw_params", r))
+    if (r < 0) {
+        alsa_error("hw_params", r);
         return -1;
+    }
     
     r = snd_pcm_hw_params_get_period_size(hw_params, &alsa->period, &dir);
-    if (!chk("get_period_size", r))
+    if (r < 0) {
+        alsa_error("get_period_size", r);
         return -1;
+    }
 
     bytes = alsa->period * DEVICE_CHANNELS * sizeof(signed short);
     alsa->buf = malloc(bytes);
@@ -396,8 +399,8 @@ int alsa_init(struct device *dv, const char *device_name,
 {
     struct alsa *alsa;
 
-    alsa = malloc(sizeof *alsa);
-    if (alsa == NULL) {
+    alsa = malloc(sizeof(struct alsa));
+    if (!alsa) {
         perror("malloc");
         return -1;
     }
@@ -416,8 +419,8 @@ int alsa_init(struct device *dv, const char *device_name,
         goto fail_capture;
     }
 
-    device_init(dv, &alsa_ops);
     dv->local = alsa;
+    dv->ops = &alsa_ops;
 
     return 0;
 

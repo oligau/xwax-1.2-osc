@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -20,28 +20,9 @@
 #include <assert.h>
 #include <stddef.h>
 
-#include "debug.h"
 #include "device.h"
 #include "player.h"
 #include "timecoder.h"
-
-void device_init(struct device *dv, struct device_ops *ops)
-{
-    debug("%p", dv);
-    dv->fault = false;
-    dv->ops = ops;
-}
-
-/*
- * Clear (destruct) the device. The corresponding constructor is
- * specific to each particular audio system
- */
-
-void device_clear(struct device *dv)
-{
-    if (dv->ops->clear != NULL)
-        dv->ops->clear(dv);
-}
 
 void device_connect_timecoder(struct device *dv, struct timecoder *tc)
 {
@@ -84,6 +65,17 @@ void device_stop(struct device *dv)
 }
 
 /*
+ * Clear (destruct) the device. The corresponding constructor is
+ * specific to each particular audio system
+ */
+
+void device_clear(struct device *dv)
+{
+    if (dv->ops->clear != NULL)
+        dv->ops->clear(dv);
+}
+
+/*
  * Get file descriptors which should be polled for this device
  *
  * Do not return anything for callback-based audio systems. If the
@@ -105,20 +97,14 @@ ssize_t device_pollfds(struct device *dv, struct pollfd *pe, size_t z)
  *
  * This function can be called when there is activity on any file
  * descriptor, not specifically one returned by this device.
+ *
+ * Return: 0 on success, or -1 if an error occured
  */
 
-void device_handle(struct device *dv)
+int device_handle(struct device *dv)
 {
-    if (dv->fault)
-        return;
-
-    if (dv->ops->handle == NULL)
-        return;
-
-    if (dv->ops->handle(dv) != 0) {
-        dv->fault = true;
-        fputs("Error handling audio device; disabling it\n", stderr);
-    }
+    assert(dv->ops->handle != NULL);
+    return dv->ops->handle(dv);
 }
 
 /*

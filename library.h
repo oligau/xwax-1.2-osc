@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,7 +28,7 @@
 /* A single crate of records */
 
 struct crate {
-    bool is_fixed;
+    bool is_fixed, is_ordered;
     char *name;
     struct listing by_artist, by_bpm, by_order;
 };
@@ -43,6 +43,7 @@ struct library {
 int library_init(struct library *li);
 void library_clear(struct library *li);
 
+struct record* library_add(struct library *l, struct record *d);
 int library_import(struct library *lib, const char *scan, const char *path);
 
 #endif

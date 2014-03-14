@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,22 +25,12 @@
 #define EXTERNAL_H
 
 #include <stdarg.h>
+#include <stddef.h>
 #include <unistd.h>
-
-/*
- * A handy read buffer; an equivalent of fread() but for
- * non-blocking file descriptors
- */
-
-struct rb {
-    char buf[4096];
-    size_t len;
-};
 
 pid_t fork_pipe(int *fd, const char *path, char *arg, ...);
 pid_t fork_pipe_nb(int *fd, const char *path, char *arg, ...);
 
-void rb_reset(struct rb *rb);
-ssize_t get_line(int fd, struct rb *rb, char **string);
+char* read_field(int fd, char *buf, size_t *fill, size_t len);
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -24,7 +24,7 @@
 
 #ifdef DEBUG
 #define debug(...) { \
-    fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
+    fprintf(stderr, "%s:%d: ", __func__, __LINE__); \
     fprintf(stderr, __VA_ARGS__); \
     fputc('\n', stderr); \
 }

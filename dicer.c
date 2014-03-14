@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -409,13 +409,6 @@ static void event(struct dicer *d, unsigned char buf[3])
     event_decoded(deck, led, action, shift, button, on);
 }
 
-static ssize_t pollfds(struct controller *c, struct pollfd *pe, size_t z)
-{
-    struct dicer *d = c->local;
-
-    return midi_pollfds(&d->midi, pe, z);
-}
-
 /*
  * Handler in the realtime thread, which polls on both input
  * and output
@@ -467,7 +460,6 @@ static void clear(struct controller *c)
 
 static struct controller_ops dicer_ops = {
     .add_deck = add_deck,
-    .pollfds = pollfds,
     .realtime = realtime,
     .clear = clear,
 };
@@ -500,8 +492,14 @@ int dicer_init(struct controller *c, struct rt *rt, const char *hw)
     controller_init(c, &dicer_ops);
     c->local = d;
 
+    if (rt_add_controller(rt, c) == -1)
+        goto fail2;
+
     return 0;
 
+fail2:
+    controller_clear(c);
+    midi_close(&d->midi);
 fail:
     free(d);
     return -1;

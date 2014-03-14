@@ -17,28 +17,35 @@
  *
  */
 
-#ifndef CUES_H
-#define CUES_H
-
-#include <math.h>
-
-#define MAX_CUES 16
-#define CUE_UNSET (HUGE_VAL)
-
 /*
- * A set of cue points
+ * Functions for external control via a socket
  */
 
-struct cues {
-    double position[MAX_CUES];
+#ifndef SOCKET_H
+#define SOCKET_H
+
+#include <poll.h>
+#include <stdlib.h>
+
+#include "list.h"
+
+struct client {
+    int fd;
+    struct list rig;
+    char buf[4096];
+    size_t fill;
+
+    char *argv[32];
+    int argc;
 };
 
-void cues_reset(struct cues *q);
+int server_start(const char *pathname);
+void server_stop(void);
 
-void cues_unset(struct cues *q, unsigned int label);
-void cues_set(struct cues *q, unsigned int label, double position);
-double cues_get(const struct cues *q, unsigned int label);
-double cues_prev(const struct cues *q, double current);
-double cues_next(const struct cues *q, double current);
+void server_pollfd(struct pollfd *pe);
+int server_handle(void);
+
+void client_pollfd(struct client *c, struct pollfd *pe);
+void client_handle(struct client *c);
 
 #endif

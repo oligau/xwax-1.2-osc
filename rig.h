@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -20,6 +20,7 @@
 #ifndef RIG_H
 #define RIG_H
 
+#include "server.h"
 #include "track.h"
 
 int rig_init();
@@ -33,5 +34,6 @@ void rig_lock();
 void rig_unlock();
 
 void rig_post_track(struct track *t);
+void rig_post_client(struct client *c);
 
 #endif

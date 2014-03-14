@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -21,6 +21,7 @@
 #define XWAX_H
 
 #include "deck.h"
+#include "library.h"
 
 extern char *banner;
 
@@ -32,5 +33,7 @@ extern char *banner;
 
 extern size_t ndeck;
 extern struct deck deck[];
+
+extern struct library library;
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -210,7 +210,7 @@ int oss_init(struct device *dv, const char *filename, unsigned int rate,
         return -1;
     }
 
-    oss = malloc(sizeof *oss);
+    oss = malloc(sizeof(struct oss));
     if (oss == NULL) {
         perror("malloc");
         goto fail;
@@ -220,8 +220,8 @@ int oss_init(struct device *dv, const char *filename, unsigned int rate,
     oss->pe = NULL;
     oss->rate = rate;
 
-    device_init(dv, &oss_ops);
     dv->local = oss;
+    dv->ops = &oss_ops;
 
     return 0;
 

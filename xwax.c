@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -32,9 +32,10 @@
 #include "dicer.h"
 #include "interface.h"
 #include "jack.h"
-#include "library.h"
 #include "oss.h"
 #include "realtime.h"
+#include "server.h"
+#include "osc.h"
 #include "thread.h"
 #include "rig.h"
 #include "timecoder.h"
@@ -56,10 +57,12 @@
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*x))
 
 char *banner = "xwax " VERSION \
-    " (C) Copyright 2013 Mark Hills <mark@xwax.org>";
+    " (C) Copyright 2012 Mark Hills <mark@pogo.org.uk>";
 
 size_t ndeck;
 struct deck deck[3];
+
+struct library library;
 
 static void usage(FILE *fd)
 {
@@ -68,7 +71,8 @@ static void usage(FILE *fd)
     fprintf(fd, "Program-wide options:\n"
       "  -k             Lock real-time memory into RAM\n"
       "  -q <n>         Real-time priority (0 for no priority, default %d)\n"
-      "  -g <s>         Set display geometry (see man page)\n"
+      "  -g <n>x<n>     Set display geometry\n"
+      "  -w <path>      Set path for server\n"
       "  -h             Display this message to stdout and exit\n\n",
       DEFAULT_PRIORITY);
 
@@ -83,9 +87,8 @@ static void usage(FILE *fd)
       "  -45            Use timecode at 45RPM\n"
       "  -c             Protect against certain operations while playing\n"
       "  -u             Allow all operations when playing\n"
-      "  --line         Line level signal (default)\n"
-      "  --phono        Tolerate cartridge level signal ('software pre-amp')\n"
-      "  -i <program>   Importer (default '%s')\n\n",
+      "  -i <program>   Importer (default '%s')\n\n"
+      "  -o <hostname>  Set OSC peer address",
       DEFAULT_IMPORTER);
 
 #ifdef WITH_OSS
@@ -112,7 +115,7 @@ static void usage(FILE *fd)
 
 #ifdef WITH_ALSA
     fprintf(fd, "MIDI control:\n"
-      "  --dicer <dev>   Novation Dicer\n\n");
+      "  -dicer <dev>   Novation Dicer\n\n");
 #endif
 
     fprintf(fd,
@@ -127,17 +130,16 @@ static void usage(FILE *fd)
 
 int main(int argc, char *argv[])
 {
-    int rc = -1, n, priority;
-    const char *importer, *scanner, *geo;
+    int r, n, priority;
+    const char *importer, *scanner, *geo, *server;
     char *endptr;
     size_t nctl;
     double speed;
     struct timecode_def *timecode;
-    bool protect, use_mlock, phono;
+    bool protect, use_mlock;
 
     struct controller ctl[2];
     struct rt rt;
-    struct library library;
 
 #if defined WITH_OSS || WITH_ALSA
     int rate;
@@ -170,8 +172,8 @@ int main(int argc, char *argv[])
     timecode = NULL;
     speed = 1.0;
     protect = false;
-    phono = false;
     use_mlock = false;
+    server = NULL;
 
 #if defined WITH_OSS || WITH_ALSA
     rate = DEFAULT_RATE;
@@ -287,7 +289,6 @@ int main(int argc, char *argv[])
         } else if (!strcmp(argv[0], "-d") || !strcmp(argv[0], "-a") ||
 		  !strcmp(argv[0], "-j"))
 	{
-            int r;
             unsigned int sample_rate;
             struct deck *ld;
             struct device *device;
@@ -306,7 +307,7 @@ int main(int argc, char *argv[])
                 return -1;
             }
 
-            fprintf(stderr, "Initialising deck %zd (%s)...\n", ndeck, argv[1]);
+            fprintf(stderr, "Initialising deck %d (%s)...\n", ndeck, argv[1]);
 
             ld = &deck[ndeck];
             device = &ld->device;
@@ -343,7 +344,7 @@ int main(int argc, char *argv[])
             if (r == -1)
                 return -1;
 
-	    sample_rate = device_sample_rate(device);
+            sample_rate = device_sample_rate(device);
 
             /* Default timecode decoder where none is specified */
 
@@ -352,11 +353,11 @@ int main(int argc, char *argv[])
                 assert(timecode != NULL);
             }
 
-            timecoder_init(timecoder, timecode, speed, sample_rate, phono);
+            timecoder_init(timecoder, timecode, speed, sample_rate);
 
             /* Connect up the elements to make an operational deck */
 
-            r = deck_init(ld, &rt);
+            r = deck_init(ld, &rt, ndeck);
             if (r == -1)
                 return -1;
 
@@ -364,7 +365,10 @@ int main(int argc, char *argv[])
 
             for (n = 0; n < nctl; n++)
                 controller_add_deck(&ctl[n], &deck[ndeck]);
-
+            
+            /* Connect this deck to OSC server */
+            osc_add_deck();
+            
             ndeck++;
 
             argv += 2;
@@ -416,20 +420,6 @@ int main(int argc, char *argv[])
             argv++;
             argc--;
 
-        } else if (!strcmp(argv[0], "--line")) {
-
-            phono = false;
-
-            argv++;
-            argc--;
-
-        } else if (!strcmp(argv[0], "--phono")) {
-
-            phono = true;
-
-            argv++;
-            argc--;
-
         } else if (!strcmp(argv[0], "-k")) {
 
             use_mlock = true;
@@ -468,6 +458,18 @@ int main(int argc, char *argv[])
             }
 
             geo = argv[1];
+
+            argv += 2;
+            argc -= 2;
+
+        } else if (!strcmp(argv[0], "-w")) {
+
+            if (argc < 2) {
+                fprintf(stderr, "-w requires a pathname as an argument.\n");
+                return -1;
+            }
+
+            server = argv[1];
 
             argv += 2;
             argc -= 2;
@@ -519,7 +521,7 @@ int main(int argc, char *argv[])
             argc -= 2;
 
 #ifdef WITH_ALSA
-        } else if (!strcmp(argv[0], "--dicer")) {
+        } else if (!strcmp(argv[0], "-dicer")) {
 
             struct controller *c;
 
@@ -560,38 +562,37 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    /* FIXME: move this to controller for proper error recovery */
-
     for (n = 0; n < nctl; n++) {
         if (rt_add_controller(&rt, &ctl[n]) == -1)
             return -1;
     }
 
-    rc = EXIT_FAILURE; /* until clean exit */
+    if (server_start(server) == -1)
+        return -1;
+        
+    if (osc_start(&deck) == -1)
+        return -1;
+    osc_start_updater_thread();
 
-    /* Order is important: launch realtime thread first, then mlock.
-     * Don't mlock the interface, use sparingly for audio threads */
+    /* Order is important: launch realtime thread first, then mlock */
 
     if (rt_start(&rt, priority) == -1)
         return -1;
 
     if (use_mlock && mlockall(MCL_CURRENT) == -1) {
         perror("mlockall");
-        goto out_rt;
+        return -1;
     }
 
     if (interface_start(&library, geo) == -1)
-        goto out_rt;
+        return -1;
 
     if (rig_main() == -1)
-        goto out_interface;
+        return -1;
 
-    rc = EXIT_SUCCESS;
     fprintf(stderr, "Exiting cleanly...\n");
 
-out_interface:
     interface_stop();
-out_rt:
     rt_stop(&rt);
 
     for (n = 0; n < ndeck; n++)
@@ -604,10 +605,11 @@ out_rt:
     library_clear(&library);
     rt_clear(&rt);
     rig_clear();
+    server_stop();
+    osc_stop();
     thread_global_clear();
 
-    if (rc == EXIT_SUCCESS)
-        fprintf(stderr, "Done.\n");
+    fprintf(stderr, "Done.\n");
 
-    return rc;
+    return 0;
 }

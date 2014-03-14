@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -37,7 +37,8 @@
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*x))
 
 static int event[2]; /* pipe to wake up service thread */
-static struct list tracks = LIST_INIT(tracks);
+static struct list tracks = LIST_INIT(tracks),
+    clients = LIST_INIT(clients);
 mutex lock;
 
 int rig_init()
@@ -88,7 +89,7 @@ void rig_clear()
 
 int rig_main()
 {
-    struct pollfd pt[4];
+    struct pollfd pt[32];
     const struct pollfd *px = pt + ARRAY_SIZE(pt);
 
     /* Monitor event pipe from external threads */
@@ -97,14 +98,19 @@ int rig_main()
     pt[0].revents = 0;
     pt[0].events = POLLIN;
 
+    /* Listening socket for new clients */
+
+    server_pollfd(&pt[1]);
+
     mutex_lock(&lock);
 
     for (;;) { /* exit via EVENT_QUIT */
         int r;
         struct pollfd *pe;
         struct track *track, *xtrack;
+        struct client *client, *xclient;
 
-        pe = &pt[1];
+        pe = &pt[2];
 
         /* Do our best if we run out of poll entries */
 
@@ -112,6 +118,13 @@ int rig_main()
             if (pe == px)
                 break;
             track_pollfd(track, pe);
+            pe++;
+        }
+
+        list_for_each(client, &clients, rig) {
+            if (pe == px)
+                break;
+            client_pollfd(client, pe);
             pe++;
         }
 
@@ -160,8 +173,14 @@ int rig_main()
 
         mutex_lock(&lock);
 
+        if (pt[1].revents != 0)
+            server_handle();
+
         list_for_each_safe(track, xtrack, &tracks, rig)
             track_handle(track);
+
+        list_for_each_safe(client, xclient, &clients, rig)
+            client_handle(client);
     }
  finish:
 
@@ -209,7 +228,12 @@ void rig_unlock(void)
 
 void rig_post_track(struct track *t)
 {
-    track_acquire(t);
+    track_get(t);
     list_add(&t->rig, &tracks);
     post_event(EVENT_WAKE);
+}
+
+void rig_post_client(struct client *c)
+{
+    list_add(&c->rig, &clients);
 }

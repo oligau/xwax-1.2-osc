@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -22,8 +22,8 @@
 #include "controller.h"
 #include "cues.h"
 #include "deck.h"
-#include "status.h"
 #include "rig.h"
+#include "osc.h"
 
 /*
  * An empty record, is used briefly until a record is loaded
@@ -44,7 +44,7 @@ static const struct record no_record = {
  * Pre: deck->device, deck->timecoder, deck->importer are valid
  */
 
-int deck_init(struct deck *deck, struct rt *rt)
+int deck_init(struct deck *deck, struct rt *rt, size_t ncontrol)
 {
     unsigned int rate;
 
@@ -53,11 +53,11 @@ int deck_init(struct deck *deck, struct rt *rt)
     if (rt_add_device(rt, &deck->device) == -1)
         return -1;
 
-    deck->ncontrol = 0;
+    deck->ncontrol = ncontrol;
     deck->record = &no_record;
     deck->punch = NO_PUNCH;
     rate = device_sample_rate(&deck->device);
-    player_init(&deck->player, rate, track_acquire_empty(), &deck->timecoder);
+    player_init(&deck->player, rate, track_get_empty(), &deck->timecoder);
     cues_reset(&deck->cues);
 
     /* The timecoder and player are driven by requests from
@@ -90,12 +90,10 @@ void deck_load(struct deck *deck, struct record *record)
 {
     struct track *t;
 
-    if (deck_is_locked(deck)) {
-        status_printf(STATUS_WARN, "Stop deck to load a different track");
+    if (deck_is_locked(deck))
         return;
-    }
 
-    t = track_acquire_by_import(deck->importer, record->pathname);
+    t = track_get_by_import(deck->importer, record->pathname);
     if (t == NULL)
         return;
 
@@ -105,10 +103,8 @@ void deck_load(struct deck *deck, struct record *record)
 
 void deck_recue(struct deck *deck)
 {
-    if (deck_is_locked(deck)) {
-        status_printf(STATUS_WARN, "Stop deck to recue");
+    if (deck_is_locked(deck))
         return;
-    }
 
     player_recue(&deck->player);
 }

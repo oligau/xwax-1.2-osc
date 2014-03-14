@@ -17,28 +17,37 @@
  *
  */
 
-#ifndef CUES_H
-#define CUES_H
+#include <stdio.h>
 
-#include <math.h>
-
-#define MAX_CUES 16
-#define CUE_UNSET (HUGE_VAL)
+#include "library.h"
 
 /*
- * A set of cue points
+ * Manual test of the record library. Mainly for use with
+ * valgrind to check for memory bugs etc.
  */
 
-struct cues {
-    double position[MAX_CUES];
-};
+int main(int argc, char *argv[])
+{
+    const char *scan;
+    size_t n;
+    struct library lib;
 
-void cues_reset(struct cues *q);
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s <scan> <path> [...]\n", argv[0]);
+        return -1;
+    }
 
-void cues_unset(struct cues *q, unsigned int label);
-void cues_set(struct cues *q, unsigned int label, double position);
-double cues_get(const struct cues *q, unsigned int label);
-double cues_prev(const struct cues *q, double current);
-double cues_next(const struct cues *q, double current);
+    scan = argv[1];
 
-#endif
+    if (library_init(&lib) == -1)
+        return -1;
+
+    for (n = 2; n < argc; n++) {
+        if (library_import(&lib, scan, argv[n]) == -1)
+            return -1;
+    }
+
+    library_clear(&lib);
+
+    return 0;
+}

@@ -17,28 +17,39 @@
  *
  */
 
-#ifndef CUES_H
-#define CUES_H
+#include <stdio.h>
 
-#include <math.h>
-
-#define MAX_CUES 16
-#define CUE_UNSET (HUGE_VAL)
+#include "rig.h"
+#include "thread.h"
+#include "track.h"
 
 /*
- * A set of cue points
+ * Self-contained manual test of a track import operation
  */
 
-struct cues {
-    double position[MAX_CUES];
-};
+int main(int argc, char *argv[])
+{
+    struct track *track;
 
-void cues_reset(struct cues *q);
+    if (argc != 3) {
+        fprintf(stderr, "usage: %s <command> <path>\n", argv[0]);
+        return -1;
+    }
 
-void cues_unset(struct cues *q, unsigned int label);
-void cues_set(struct cues *q, unsigned int label, double position);
-double cues_get(const struct cues *q, unsigned int label);
-double cues_prev(const struct cues *q, double current);
-double cues_next(const struct cues *q, double current);
+    if (thread_global_init() == -1)
+        return -1;
 
-#endif
+    rig_init();
+
+    track = track_get_by_import(argv[1], argv[2]);
+    if (track == NULL)
+        return -1;
+
+    rig_main();
+
+    track_put(track);
+    rig_clear();
+    thread_global_clear();
+
+    return 0;
+}

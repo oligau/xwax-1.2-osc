@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Mark Hills <mark@xwax.org>
+ * Copyright (C) 2012 Mark Hills <mark@pogo.org.uk>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -71,10 +71,10 @@ void track_use_mlock(void);
 
 /* Tracks are dynamically allocated and reference counted */
 
-struct track* track_acquire_by_import(const char *importer, const char *path);
-struct track* track_acquire_empty(void);
-void track_acquire(struct track *t);
-void track_release(struct track *t);
+struct track* track_get_by_import(const char *importer, const char *path);
+struct track* track_get_empty(void);
+void track_get(struct track *t);
+void track_put(struct track *t);
 
 /* Functions used by the rig and main thread */
 
